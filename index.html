@@ -49,6 +49,7 @@ button,input,select{font:inherit}button{cursor:pointer;border:0}.hidden{display:
     </form>
     <div class="notice">Novos usuários precisam solicitar acesso. O cadastro só será liberado após aprovação de um administrador.</div>
     <button class="link-btn" onclick="openRequest()">Solicitar Acesso →</button>
+    <button type="button" class="link-btn" onclick="openRecovery()">Esqueci minha senha</button>
   </div>
 </section>
 
@@ -134,6 +135,17 @@ button,input,select{font:inherit}button{cursor:pointer;border:0}.hidden{display:
   </form>
 </dialog>
 
+<dialog id="recoveryDialog" class="panel" style="width:min(480px,94vw);color:var(--text)">
+ <form id="recoveryForm"><h3>Recuperar senha</h3><p class="sub">Informe o e-mail da sua conta. O link precisa abrir esta versão publicada em um endereço HTTPS autorizado no Supabase.</p>
+ <div class="field"><label>E-mail</label><input name="email" type="email" required autocomplete="email"></div>
+ <div class="actions"><button class="btn" type="submit">Enviar recuperação</button><button type="button" class="btn secondary" onclick="document.getElementById('recoveryDialog').close()">Cancelar</button></div></form>
+</dialog>
+<dialog id="newPasswordDialog" class="panel" style="width:min(480px,94vw);color:var(--text)">
+ <form id="newPasswordForm"><h3>Definir nova senha</h3><p class="sub">Escolha uma senha nova para sua conta.</p>
+ <div class="field"><label>Nova senha</label><input name="password" type="password" required minlength="8" autocomplete="new-password"></div>
+ <div class="field"><label>Confirme a nova senha</label><input name="confirm" type="password" required minlength="8" autocomplete="new-password"></div>
+ <div class="actions"><button class="btn" type="submit">Salvar nova senha</button></div></form>
+</dialog>
 <script>
 'use strict';
 const SUPABASE_URL='https://tselgmaotoafrujsfpsq.supabase.co';
@@ -144,6 +156,11 @@ let session=null, members=[], memberRows=[], profiles=[], conversionChart=null,g
 function toast(message,error=false){const el=document.createElement('div');el.className='toast'+(error?' error':'');el.textContent=message;$('toastRoot').append(el);setTimeout(()=>el.remove(),6500)}
 function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function openRequest(){$('requestDialog').showModal()}
+function openRecovery(){$('recoveryDialog').showModal()}
+$('recoveryForm').addEventListener('submit',async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button[type="submit"]');btn.disabled=true;try{if(location.protocol!=='https:')throw Error('Para recuperar a senha, abra esta versão em um endereço HTTPS de homologação, não como arquivo local.');const email=new FormData(e.currentTarget).get('email').trim();const redirectTo=location.origin+location.pathname;const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo});if(error)throw error;$('recoveryDialog').close();toast('Se a conta existir, você receberá um e-mail. Abra o link no mesmo navegador.')}catch(err){toast('Recuperação: '+err.message,true)}finally{btn.disabled=false}});
+$('newPasswordForm').addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(e.currentTarget),password=d.get('password');if(password!==d.get('confirm')){toast('As senhas não coincidem.',true);return}const btn=e.currentTarget.querySelector('button[type="submit"]');btn.disabled=true;try{const {error}=await db.auth.updateUser({password});if(error)throw error;$('newPasswordDialog').close();e.currentTarget.reset();toast('Senha alterada com sucesso. Entre com sua nova senha.');await db.auth.signOut();session=null;members=[];renderAuth();history.replaceState(null,'',location.pathname)}catch(err){toast('Não foi possível salvar a senha: '+err.message,true)}finally{btn.disabled=false}});
+if(db){db.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY'){setTimeout(()=>{$('newPasswordDialog').showModal()},0)}})}
+
 function tableHTML(headers,rows,empty='Nenhum registro encontrado.'){if(!rows.length)return `<div class="empty">${escapeHTML(empty)}</div>`;return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`}
 function renderAuth(){const logged=!!session,admin=logged&&session.role==='admin';$('mainNav').classList.toggle('hidden',!logged);$('logoutBtn').classList.toggle('hidden',!logged);$('sessionLabel').textContent=logged?`Olá, ${session.name}`:'Acesso à plataforma';document.querySelectorAll('#mainNav button[data-page="admin"]').forEach(b=>b.classList.toggle('hidden',!admin));if(!logged){showPage('home');return}showPage('members')}
 function showPage(page){if(!session&&page!=='home'){toast('Entre para acessar esta área.',true);return}if(page==='admin'&&session?.role!=='admin'){toast('Apenas administradores podem acessar esta área.',true);return}document.querySelectorAll('main section[id^="page-"]').forEach(s=>s.classList.add('hidden'));$('page-'+page).classList.remove('hidden');document.querySelectorAll('#mainNav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));if(page==='members')renderMembers();if(page==='admin')renderAdmin();if(page==='dashboard')renderDashboard()}
